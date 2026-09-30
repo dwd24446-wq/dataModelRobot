@@ -1,0 +1,61 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
+    <id>org.dw.dataModelRobot</id>
+
+    <!-- Public plugin name should be written in Title Case.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
+    <name>DataModelRobot</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor>dw</vendor>
+
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+         Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
+    <description><![CDATA[
+    DataModelRobot extracts the data model of a Spring Boot project: it parses source code together
+    with the database schema, then outputs table information and a relationship diagram in which
+    every table relation carries a confidence score.
+    <br><br>
+    实际项目普遍不建外键，表关系只能从业务代码推断，而研发可能误解数据关系写出错误代码。
+    因此本插件不只给出关系，还给出<b>证据链</b>与<b>冲突列表</b>：
+    <ul>
+      <li>每条证据可追溯到 <code>文件:行号</code>——MPJ 显式 JOIN、LambdaQueryWrapper 条件、命名约定各自计权</li>
+      <li>冲突检测：JOIN 两侧类型不匹配、租户/逻辑删除隔离缺失、多义指向、双向不一致、孤儿字段</li>
+      <li>置信度由证据与冲突算出，不由 LLM 直接给分，保证可复现、可追溯</li>
+    </ul>
+    首期聚焦 MyBatis-Plus 技术栈（MyBatis-Plus + MyBatis-Plus-Join + dynamic-datasource + Lombok）。
+    <br><br>
+    Requires the bundled Database Tools plugin for schema access and JDBC drivers.
+  ]]></description>
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends>
+    <depends>com.intellij.database</depends>
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="DataModelRobot"
+                           displayType="BALLOON"/>
+        <!-- 只读 build/datamodel/ 下的 JSON 产物，不碰 PSI，所以 DumbAware。
+             图的渲染交给 IDE 自带的 com.intellij.mermaid（打开 .mmd 即预览），
+             故这里不声明 depends，也不 bundle mermaid.js -->
+        <toolWindow id="Data Model"
+                    anchor="bottom"
+                    factoryClass="org.dw.datamodelrobot.toolwindow.DataModelToolWindowFactory"
+                    icon="AllIcons.Nodes.DataSchema"
+                    canCloseContents="false"/>
+    </extensions>
+
+    <actions>
+        <action id="DataModelRobot.Scan"
+                class="org.dw.datamodelrobot.ScanDataModelAction"
+                text="Scan Data Model"
+                description="Extract tables, relations, evidence and confidence to JSON + Mermaid, then load into the Data Model tool window">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

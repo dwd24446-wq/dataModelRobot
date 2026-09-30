@@ -1,0 +1,23 @@
+{
+  "name": "datamodelrobot-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing the dataModelRobot fact source (tables, relations with confidence, conflicts) as read-only tools",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "datamodelrobot-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "zod": "^4.6.5"
+  },
+  "license": "Apache-2.0",
+  "private": true
+}

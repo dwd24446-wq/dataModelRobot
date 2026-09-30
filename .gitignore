@@ -1,0 +1,61 @@
+.gradle
+build/
+.intellijPlatform
+.kotlin/
+.idea/
+node_modules/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+
+### 只在本地开发期用，不随仓库分发 ###
+# 仓库只发布 IDEA 插件本体（src/main）+ 事实源消费端（mcp-server/src、skills/）。
+# 下面这些是开发与验收期的资产：本地照常跑，但不进版本库。
+src/test/
+fixtures/
+/scripts/
+mcp-server/test/
+AGENTS.md
+PLAN.md
+USAGE.md
+FEATURES.md
+
+# 本机 DSN / 凭据
+.env.local
+
+### Maven ###
+target/
+
+### IntelliJ IDEA ###
+.idea/modules.xml
+.idea/jarRepositories.xml
+.idea/compiler.xml
+.idea/libraries/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store

@@ -1,0 +1,192 @@
+<html>
+<body style="margin: 4px;">
+
+<h2>一、这个插件做什么</h2>
+<p>
+把 Spring Boot（MyBatis-Plus 技术栈）项目的<b>数据模型</b>从代码与库里抽出来，重点回答一件事：
+<b>两张表到底怎么关联、这个结论有多可信</b>。实际项目普遍不建外键，关系只能从业务代码推断，
+而研发误解数据关系就会写出错代码 —— 所以每条关系都带<b>证据链</b>、<b>冲突清单</b>与<b>可复现的置信度算式</b>。
+</p>
+<p>四层架构，只有第一层是重活：</p>
+<table border="0" cellpadding="3">
+<tr><td valign="top"><b>① 插件（本面板）</b></td><td>PSI 扫代码 + DatabaseTools 读 schema，规则引擎算证据与冲突，产出 JSON 事实源 + Mermaid 图</td></tr>
+<tr><td valign="top"><b>② JSON 事实源</b></td><td>唯一事实源，可进版本库、可 diff。分数只在这里算一次，下游一律只读</td></tr>
+<tr><td valign="top"><b>③ MCP Server</b></td><td>极薄的只读接口层，让 AI 客户端能查表、查关系、查算式（见第三节）</td></tr>
+<tr><td valign="top"><b>④ Skill</b></td><td>编排 MCP + LLM 兜底推断规则引擎搞不定的模糊关系（见第四节）</td></tr>
+</table>
+<p>
+<b>首期只支持 MyBatis-Plus 技术栈</b>（MyBatis-Plus + MyBatis-Plus-Join + dynamic-datasource + Lombok），不做通用 ORM。
+运行环境：<b>IntelliJ IDEA 2026.2+</b>（build 262+，统一版含免费层）。<b>DataGrip 与 IDEA Community 都不支持</b>：前者缺 <code>com.intellij.java</code>（本插件要扫 Java 源码，这条依赖去不掉），后者缺 <code>com.intellij.database</code>；PyCharm / WebStorm / GoLand / CLion 两条都缺。
+</p>
+
+<h2>二、五分钟上手（全在 IDE 里）</h2>
+
+<h3>第 1 步：配一次数据源（一次性，只需做一次）</h3>
+<ol>
+<li>打开 <b>Database</b> 工具窗口 → <code>+</code> → <b>Data Source</b> → <b>MySQL</b>，填连接与凭据。</li>
+<li>在 <b>Schemas</b> 标签页里<b>只勾选目标那一个库</b>。<br>
+   <font color="#c00000">这一步很关键</font>：放任 introspect 整个服务器，插件会把服务器上所有库的表都拉进来，
+   catalog 也会退化成数据源名。</li>
+<li>等 introspection 转完（数据源图标不再转圈）。没转完时插件会如实提示「introspection 尚未完成」。</li>
+<li>驱动不用管：由 IDE 的 Database Tools 提供，插件自己不 bundle 任何 JDBC 驱动。</li>
+</ol>
+
+<h3>第 2 步：扫描</h3>
+<p>
+两个入口，<b>同一条实现</b>，随便用哪个：本面板工具栏最左边的 <b>扫描并加载</b>（▶ 图标），
+或菜单 <b>Tools → Scan Data Model</b>（在 Tools 菜单最下方）。后台跑完整管线：
+读 schema → 建实体索引 → 收五类证据 → 聚合关系 → 检五类冲突 → 算置信度。
+跑完弹气泡通知，给出表数 / 关系数（HIGH、实线、虚线）/ 冲突数 / 需复核数 / 耗时 / 产物路径。
+</p>
+<p>
+索引没建完时按钮是<b>灰的</b>（扫描要解析方法引用的泛型实参，索引期间的结果是残缺的），等 IDE 右下角的进度条走完再点。
+</p>
+<p>产物落在 <code>&lt;项目根&gt;/build/datamodel/</code>：</p>
+<table border="0" cellpadding="3">
+<tr><td valign="top"><code>&lt;项目名&gt;-datamodel.json</code></td><td>JSON 事实源（MCP 与 Skill 只读它）</td></tr>
+<tr><td valign="top"><code>mermaid/&lt;模块&gt;.mmd</code></td><td>按模块分的 ER 图（这类脚手架的表前缀天然是模块边界）。图头每行 <code>表名["表名 中文注释"]</code> 是 mermaid 的实体别名，表框里就显示中文；模块图合起来就是全库</td></tr>
+<tr><td valign="top"><code>adhoc/*.mmd</code></td><td>双击表或业务范围生成的带字段 ER 图，含字段类型、注释与 PK/UK/FK 标记</td></tr>
+</table>
+
+<h3>第 3 步：扫完自动加载，不用再点重载</h3>
+<p>
+扫描一结束，本面板会<b>自动刷到新产物</b>（工具栏那个按钮的名字就叫「扫描并加载」）。
+面板本身<b>只读磁盘上的 JSON</b>、不持有内存里的扫描结果 —— 好处是重启 IDE 仍能看、
+且「JSON 是唯一事实源」这条不破；刷新是由扫描侧回过来推一把完成的。
+</p>
+<p>
+扫描<b>失败</b>时（没配数据源、introspection 没跑完、解析报错）通知会说清原因，
+面板则退回显示磁盘上一次的产物，不会停在一份不知道新旧的数据上。
+</p>
+
+<h3>第 4 步：浏览与跳转</h3>
+<ul>
+<li>上面是树（模块 → 关系 → 证据 / 冲突），下面是选中项的<b>详情</b>：算式、惩罚系数与人话理由、schema 侧信号、消歧结论。</li>
+<li><b>双击</b>任何一条证据或冲突 → 跳到写它的那行 Java（<code>文件:行号</code>）。同名文件命中多个时弹列表让你选，不猜。</li>
+<li>低于 0.60 的关系<b>整行灰掉</b>，与 Mermaid 的虚实线是同一条线；行尾的 <code>[需复核]</code> / <code>[未对齐]</code> 是标记。</li>
+<li>直接敲表名可以 speed search 过滤。</li>
+</ul>
+
+<h3>第 5 步：看关系图</h3>
+<p>
+工具栏 <b>打开 Mermaid 关系图</b> → 选一个模块。
+图由 IDE <b>自带的 Mermaid 插件</b>渲染（打开即「编辑器 + 预览」双栏），本插件不 bundle mermaid.js。
+</p>
+<p>
+<b>双击表或业务范围</b>打开带字段的 ER 图与<b>非模态</b>选择窗口。
+勾选表、调整最低置信度或邻域的入边/出边方向后，预览会实时更新；选择只影响这张图，不改持久化业务范围。
+业务范围最多 25 张表；单表邻域最多 25 个邻居，超出时按置信度取前 25，并在图头注明遗漏数量。
+</p>
+<p>读图口径：</p>
+<ul>
+<li>写法是 <code>被指向的表 ||--o{ 持有外键的表 : "外键列 置信度"</code>，左边是「一」的一方。</li>
+<li><b>实线</b> = 置信度 ≥ 0.60（可采信）；<b>虚线</b> = 低于该线，去核对一眼。虚线不是「错」，是「证据还不自洽」。</li>
+<li>基数从 schema 推：落点是主键/唯一键 → <code>||</code>；落点不唯一 → <code>}o</code>（它压根不是一对多）；
+   外键列自己是主键 → 右边收成 <code>||</code>（共享主键的扩展表就是 1:1）。</li>
+<li>表框里的中文注释：优先取<b>数据库表注释</b>，库里没写才用<b>实体类 Javadoc</b> 首段；两处都拿不到就只画表名。
+   注释会被洗一遍再上图（引号、方括号、<code>%</code> 这类会让整张图渲染失败的字符剔掉，超 30 字符截断）。</li>
+<li><b>模块图不画字段，单表邻域与业务范围图带字段</b>。Mermaid 的 50,000 字符硬上限
+   （<code>maxTextSize</code>）不能靠文件内配置抬高。带字段图按 49,000 字符预算依次省略字段注释、
+   只留主键与关系字段；仍超预算则按置信度裁剪关系。降级与裁剪均在图头注明。</li>
+</ul>
+
+<h2>三、装 MCP Server（让 AI 客户端直接查事实源）</h2>
+<p>
+<code>mcp-server/</code> 是独立的 Node 子项目（ESM、零构建），<b>只读事实源、不连库、不重新打分</b>：
+置信度、档位、消歧结论全用插件算好的值，<code>scoring</code> 段把公式一并透出。暴露 4 个工具：
+<code>get_tables</code> / <code>get_relations</code> / <code>explain_relation</code> / <code>list_conflicts</code>。
+</p>
+<p>安装与自检：</p>
+<pre>cd mcp-server &amp;&amp; npm install &amp;&amp; npm test</pre>
+<p>按所用 MCP 客户端的方式注册；以下是支持 <code>mcpServers</code> 配置的示例，<b>路径要写绝对路径</b>：</p>
+<pre>{
+  "mcpServers": {
+    "datamodelrobot": {
+      "command": "node",
+      "args": [
+        "&lt;项目根&gt;/mcp-server/src/index.js",
+        "--fact-source",
+        "&lt;项目根&gt;/build/datamodel/&lt;项目名&gt;-datamodel.json"
+      ]
+    }
+  }
+}</pre>
+<p>
+事实源路径的优先级：<code>--fact-source</code> → 环境变量 <code>DATAMODEL_FACT_SOURCE</code> → <b>自动发现</b> <code>../build/datamodel/</code> 下的 <code>*-datamodel.json</code>（恰好一份就直接用；多份取字典序第一个并在 stderr 告警；一份都没有则报错并提示先跑 Scan Data Model）。所以上面那段 <code>--fact-source</code> 是<b>可选</b>的，只在要钉死某一份时才需要写。
+重新扫描后事实源变了，<b>重启一次 MCP server</b> 才会读到新内容。
+</p>
+
+<h2>四、装 Skill（AI 编排 + 模糊关系兜底）</h2>
+<p>
+Skill 源码在 <code>skills/explore-data-model/</code>，与 <code>mcp-server/</code> 平级、随仓库分发。
+按所用 AI 客户端的 Skill 机制注册或链接该目录；客户端若支持命令触发，可用
+<code>/explore-data-model</code>，也可直接问数据模型问题
+（「这两张表怎么关联」「这列指向哪」「为什么这条关系是这个分」「哪些关系要复核」）。
+若客户端把 Skill 复制到仓库外，运行查询脚本时设置 <code>DATAMODELROBOT_ROOT</code> 为本仓库根目录。
+</p>
+<p>它做两件事：</p>
+<ul>
+<li><b>A 探索/答问</b>：优先调上面那 4 个 MCP 工具；<b>MCP 没注册就自动回退</b>到
+   <code>scripts/query.mjs</code>（复用 mcp-server 同一份数据层，不另立逻辑），所以不装 MCP 也能用。</li>
+<li><b>B LLM 兜底</b>：对规则引擎判不了的多义列（例如 <code>user_id</code> 同时匹配
+   <code>member_user</code> 与 <code>system_users</code>），读真实源码（import 的实体家族、字段 Javadoc）定案，
+   再由 <code>scripts/record-inferred.mjs</code> 写进<b>独立的 overlay 文件</b>。</li>
+</ul>
+<p>
+兜底有几条硬不变量，由脚本强制而不是靠模型自觉：<code>type</code> 永远是 <code>inferred</code>、
+<b>置信度封顶 0.6</b>（超过直接拒绝写入）、必须给 <code>rationale</code> 与至少一条带 <code>文件:行号</code> 的证据、
+强制 <code>needsReview=true</code>。<b>overlay 与事实源分文件</b>，所以事实源永远干净、删文件即回滚。
+</p>
+
+<h2>五、怎么读置信度</h2>
+<p>公式：<code>confidence = round2( min(noisyOr(证据权重), 0.99) × Π 惩罚系数 )</code>。
+证据权重：MPJ 显式 JOIN 0.95 / Lambda 等值 0.85 / 同名列键元组 0.90 / select 关联 0.75 / 只有命名约定 0.60。</p>
+<table border="0" cellpadding="3">
+<tr><td valign="top"><b>HIGH</b> ≥ 0.85</td><td>可以闭眼采信</td></tr>
+<tr><td valign="top"><b>MEDIUM</b> ≥ 0.60</td><td>实线。可用，但值得扫一眼证据</td></tr>
+<tr><td valign="top"><b>LOW</b> &lt; 0.60</td><td>虚线。<b>去核对</b>：多半是只有命名约定、或落点有竞争、或类型对不上</td></tr>
+</table>
+<p>
+<b>0.60 是一条线三个含义</b>：Mermaid 的虚实线、MEDIUM 档位的下限、以及 Skill 里 LLM 兜底推断的封顶分。
+</p>
+<p>置信度表达的是<b>「证据之间是否自洽 + 这条关系是否成立」</b>，不是「这个 JOIN 写得好不好」。
+分数低不代表代码有 bug；反过来，代码真写了 JOIN 但两侧类型对不上，分数会被压下来 —— 那正是要看的地方。
+最该看的一栏是「代码撑腰（CODE_BACKED）却分数最低」的关系，报告里有。</p>
+
+<h2>六、常见问题</h2>
+<table border="1" cellpadding="4">
+<tr><td><b>现象</b></td><td><b>原因与处理</b></td></tr>
+<tr><td>通知说「需要先配置数据源」</td><td>Database 工具窗口里没配数据源，或没勾任何 schema。见第二节第 1 步。</td></tr>
+<tr><td>通知说「introspection 尚未完成」</td><td>数据源还在读元数据，等它转完再点一次 Scan Data Model。</td></tr>
+<tr><td>面板是空的 / 数据是旧的</td><td>点工具栏「扫描并加载」重扫一次，扫完自动加载。按钮<b>是灰的</b>说明项目还在索引，等索引完再点。
+   另一种可能：面板只读 <code>&lt;项目根&gt;/build/datamodel/</code>（优先 <code>&lt;项目名&gt;-datamodel.json</code>，
+   否则取该目录下最新的 <code>*-datamodel.json</code>），所以写在别的目录里的产物它看不见。</td></tr>
+<tr><td>双击证据跳不过去</td><td>要么项目还在索引（状态栏会说「索引未就绪」），要么事实源是<b>别的项目</b>扫出来的 ——
+   跳转靠文件名在项目里反查，所以产物必须属于当前项目。</td></tr>
+<tr><td>打开 <code>.mmd</code> 只有源码没有图</td><td>渲染靠 IDE 自带的 Mermaid 插件 + JCEF。确认 Mermaid 插件没被禁用，
+   再看编辑器右上角的预览分栏是否被折叠。</td></tr>
+<tr><td>图变成红色方框 <code>Maximum text size in diagram exceeded</code></td>
+   <td>Mermaid 的 <code>maxTextSize</code> 默认 50,000 字符，超了就把整份源码换成这张错误图。
+   插件产出自带护栏（预算 49,000，超了按分数砍并在图头写明），正常扫出来的图不会触发；
+   触发了说明文件被手改过。注意<b>数字符不是数字节</b>，一个汉字算 1 字符但占 3 字节。</td></tr>
+<tr><td>某张表在图里没有</td><td>默认不画「代码引用了、库里没有的表」（ER 图描述的是<b>这个库</b>）。
+   它们仍在事实源 JSON 里，标着 <code>schemaAligned=false</code> 且分数封顶在虚线区 —— 代码与库漂移本身就是信号。</td></tr>
+</table>
+
+<h2>七、已知边界（有意取舍，不是待办）</h2>
+<ul>
+<li><b>模块图不画字段</b>；单表邻域与业务范围图带字段，受表数量与 Mermaid 字符预算约束。</li>
+<li><b>DBML 有意没做</b>：它的关系语法不支持样式，表达不了置信度。</li>
+<li><b>插件内不自渲染图</b>：交给 IDE 自带的 Mermaid 插件，省 5.1MB 的 mermaid.js 与 JCEF 依赖，
+   也因此 <code>plugin.xml</code> 不新增 <code>&lt;depends&gt;</code> —— 缺 Mermaid 插件只是不出图，插件照常工作。</li>
+<li><b>只支持 MyBatis-Plus 技术栈</b>：JPA / jOOQ / QueryDSL / JdbcTemplate 的解析面是无底洞，先把最流行的脚手架吃透。
+   架构留了 Parser SPI 扩展点。</li>
+<li><b>关系是从代码推断的，不是数据库声明的</b>：库里通常没有外键，所以每条结论都给证据与分数，
+   低分的要人看一眼，工具不替你做决定。</li>
+</ul>
+
+<p><font color="#808080">完整细节见项目根的 <code>README.md</code>（构建、产物字段、MCP 与 Skill 用法）与
+<code>AGENTS.md</code>（环境事实与硬约束）。</font></p>
+
+</body>
+</html>
